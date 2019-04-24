@@ -20,7 +20,7 @@ public class Importer
 {
 	private static String URL = "mongodb://usuario:xyz123@localhost:27017";
     public static final String cnaDB = "ControleNovaAmerica";
-    public static final String ccDB = "ControleCronicosBD2";
+    public static final String ccDB = "ControleCronicosBD";
     public static final String VERSAO = "1.2.0 (ccDB)";
     
     public static void main( String[] args )
@@ -52,6 +52,9 @@ public class Importer
     					if (doc.containsKey("CNS")) paciente.append("cns", doc.getLong("CNS"));
     					if (doc.containsKey("medico")) paciente.append("medico", doc.getString("medico"));
     					if (doc.containsKey("name")) pessoa.append("name", doc.getString("name"));
+    					if (doc.containsKey("nomeMae")) pessoa.append("nomeMae", doc.getString("nomeMae"));
+    					if (doc.containsKey("dn")) pessoa.append("dn", doc.getDate("dn"));
+    					pessoa.append("inscricao", LocalDate.now());
     					if (doc.containsKey("masc") && doc.getBoolean("masc")) pessoa.append("sexo", "mas");
     					if (doc.containsKey("fem") && doc.getBoolean("fem")) pessoa.append("sexo", "fem");
     					if (doc.containsKey("cell")) pessoa.append("tel", doc.getString("cell"));
@@ -65,9 +68,40 @@ public class Importer
     					if (doc.containsKey("renal")) paciente.append("renal", doc.getBoolean("renal"));
     					if (doc.containsKey("riscoSocial")) paciente.append("riscoSocial", doc.getBoolean("riscoSocial"));
     					if (doc.containsKey("bolsaFamilia")) paciente.append("bolsaFamilia", doc.getBoolean("bolsaFamilia"));
-
+    					
     					CCPessoas.insertOne(pessoa);
     					CCPaciente.insertOne(paciente);
+    					
+    					if (doc.containsKey("has") && doc.getBoolean("has") == true) {
+    						Document hasDoc = new Document();
+    						hasDoc.append("paciente_id", paciente.getObjectId("_id"));
+    						CCHas.insertOne(hasDoc);
+    						paciente.append("controleHas", hasDoc.getObjectId("_id"));
+    					} 
+    					if (doc.containsKey("dm") && doc.getBoolean("dm") == true) {
+    						Document dmDoc = new Document();
+    						dmDoc.append("paciente_id", paciente.getObjectId("_id"));
+    						CCDm.insertOne(dmDoc);
+    						paciente.append("controleDm", dmDoc.getObjectId("_id"));
+    					} 
+    					if (doc.containsKey("pneumo") && doc.getBoolean("pneumo") == true) {
+    						Document pneumoDoc = new Document();
+    						pneumoDoc.append("paciente_id", paciente.getObjectId("_id"));
+    						CCPneumo.insertOne(pneumoDoc);
+    						paciente.append("controlePneumo", pneumoDoc.getObjectId("_id"));
+    					} 
+    					if (doc.containsKey("vd") && doc.getBoolean("vd") == true) {
+    						Document vdDoc = new Document();
+    						vdDoc.append("paciente_id", paciente.getObjectId("_id"));
+    						CCVd.insertOne(vdDoc);
+    						paciente.append("controleVd", vdDoc.getObjectId("_id"));
+    					} 
+    					if (doc.containsKey("sm") && doc.getBoolean("sm") == true) {
+    						Document smDoc = new Document();
+    						smDoc.append("paciente_id", paciente.getObjectId("_id"));
+    						CCSm.insertOne(smDoc);
+    						paciente.append("controleSm", smDoc.getObjectId("_id"));
+    					} 
     					
     					pessoa.append("paciente_id", paciente.getObjectId("_id"));
     					paciente.append("pessoa_id", pessoa.getObjectId("_id"));
@@ -81,7 +115,8 @@ public class Importer
     						rec.append("data", DateUtils.asDate(LocalDate.now()));
     						rec.append("tipo", "1via");
     						rec.append("paciente_Id", paciente.getObjectId("_id"));
-    						CCReceitas.insertOne(rec);
+    						if (!rec.getString("receita").equals(""))
+    							CCReceitas.insertOne(rec);
     					}
     					if (doc.containsKey("receita2")) {
     						Document rec = new Document();
@@ -89,7 +124,8 @@ public class Importer
     						rec.append("data", DateUtils.asDate(LocalDate.now()));
     						rec.append("tipo", "1via");
     						rec.append("paciente_Id", paciente.getObjectId("_id"));
-    						CCReceitas.insertOne(rec);
+    						if (!rec.getString("receita").equals(""))
+    							CCReceitas.insertOne(rec);
     					}
     					if (doc.containsKey("receita3")) {
     						Document rec = new Document();
@@ -97,36 +133,10 @@ public class Importer
     						rec.append("data", DateUtils.asDate(LocalDate.now()));
     						rec.append("tipo", "2vias");
     						rec.append("paciente_Id", paciente.getObjectId("_id"));
-    						CCReceitas.insertOne(rec);
+    						if (!rec.getString("receita").equals(""))
+    							CCReceitas.insertOne(rec);
     					}
-    					
-    					
-    					if (doc.containsKey("has") && doc.getBoolean("has")) {
-    						Document hasDoc = new Document();
-    						hasDoc.append("paciente_id", paciente.getObjectId("_id"));
-    						CCHas.insertOne(hasDoc);
-    					}
-    					if (doc.containsKey("dm") && doc.getBoolean("dm")) {
-    						Document dmDoc = new Document();
-    						dmDoc.append("paciente_id", paciente.getObjectId("_id"));
-    						CCDm.insertOne(dmDoc);
-    					}
-    					if (doc.containsKey("pneumo") && doc.getBoolean("pneumo")) {
-    						Document pneumoDoc = new Document();
-    						pneumoDoc.append("paciente_id", paciente.getObjectId("_id"));
-    						CCPneumo.insertOne(pneumoDoc);
-    					}
-    					if (doc.containsKey("vd") && doc.getBoolean("vd")) {
-    						Document vdDoc = new Document();
-    						vdDoc.append("paciente_id", paciente.getObjectId("_id"));
-    						CCVd.insertOne(vdDoc);
-    					}
-    					if (doc.containsKey("sm") && doc.getBoolean("sm")) {
-    						Document smDoc = new Document();
-    						smDoc.append("paciente_id", paciente.getObjectId("_id"));
-    						CCSm.insertOne(smDoc);
-    					}
-    					
+
     				});
     	} catch (Exception e) {
     		e.printStackTrace();
