@@ -113,8 +113,11 @@ public class Importer
     						Document rec = new Document();
     						rec.append("receita", doc.getString("receita"));
     						rec.append("data", DateUtils.asDate(LocalDate.now()));
-    						rec.append("tipo", "1via");
-    						rec.append("paciente_Id", paciente.getObjectId("_id"));
+    						rec.append("atual", true);
+    						rec.append("antiga", false);
+    						rec.append("umaVia", true);
+    						rec.append("duasVias", false);
+    						rec.append("paciente_id", paciente.getObjectId("_id"));
     						if (!rec.getString("receita").equals(""))
     							CCReceitas.insertOne(rec);
     					}
@@ -122,8 +125,11 @@ public class Importer
     						Document rec = new Document();
     						rec.append("receita", doc.getString("receita2"));
     						rec.append("data", DateUtils.asDate(LocalDate.now()));
-    						rec.append("tipo", "1via");
-    						rec.append("paciente_Id", paciente.getObjectId("_id"));
+    						rec.append("atual", true);
+    						rec.append("antiga", false);
+    						rec.append("umaVia", true);
+    						rec.append("duasVias", false);
+    						rec.append("paciente_id", paciente.getObjectId("_id"));
     						if (!rec.getString("receita").equals(""))
     							CCReceitas.insertOne(rec);
     					}
@@ -131,8 +137,11 @@ public class Importer
     						Document rec = new Document();
     						rec.append("receita", doc.getString("receita3"));
     						rec.append("data", DateUtils.asDate(LocalDate.now()));
-    						rec.append("tipo", "2vias");
-    						rec.append("paciente_Id", paciente.getObjectId("_id"));
+    						rec.append("atual", true);
+    						rec.append("antiga", false);
+    						rec.append("umaVia", false);
+    						rec.append("duasVias", true);
+    						rec.append("paciente_id", paciente.getObjectId("_id"));
     						if (!rec.getString("receita").equals(""))
     							CCReceitas.insertOne(rec);
     					}
