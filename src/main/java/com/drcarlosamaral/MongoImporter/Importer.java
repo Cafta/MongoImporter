@@ -1,6 +1,7 @@
 package com.drcarlosamaral.MongoImporter;
 
 import org.bson.Document;
+import org.bson.types.ObjectId;
 
 import com.mongodb.MongoClient;
 import com.mongodb.MongoClientURI;
@@ -10,6 +11,7 @@ import com.mongodb.client.MongoDatabase;
 import static com.mongodb.client.model.Filters.*;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Date;
 
 /**
@@ -49,6 +51,7 @@ public class Importer
     					Document paciente = new Document();
     					if (doc.containsKey("ff")) paciente.append("ff", doc.getString("ff"));
     					if (doc.containsKey("posto")) paciente.append("posto", doc.getString("posto"));
+    					if (doc.containsKey("Equipe")) paciente.append("equipe", doc.getString("Equipe"));
     					if (doc.containsKey("CNS")) paciente.append("cns", doc.getLong("CNS"));
     					if (doc.containsKey("medico")) paciente.append("medico", doc.getString("medico"));
     					if (doc.containsKey("name")) pessoa.append("name", doc.getString("name"));
@@ -57,9 +60,9 @@ public class Importer
     					pessoa.append("inscricao", LocalDate.now());
     					if (doc.containsKey("masc") && doc.getBoolean("masc")) pessoa.append("sexo", "mas");
     					if (doc.containsKey("fem") && doc.getBoolean("fem")) pessoa.append("sexo", "fem");
-    					if (doc.containsKey("cell")) pessoa.append("tel", doc.getString("cell"));
+    					if (doc.containsKey("cell")) pessoa.append("cel", doc.getString("cell"));
     					if (doc.containsKey("vivo")) pessoa.append("vivo", doc.getBoolean("vivo"));
-    					if (doc.containsKey("nota")) pessoa.append("nota", doc.getString("nota"));
+    					if (doc.containsKey("nota")) pessoa.append("obs", doc.getString("nota"));
     					if (doc.containsKey("hpp")) paciente.append("hpp", doc.getString("hpp"));
     					
     					if (doc.containsKey("tabagista")) paciente.append("tabagista", doc.getBoolean("tabagista"));
@@ -155,28 +158,81 @@ public class Importer
     	try (MongoClient mongoClient = new MongoClient(connectionString)){
     		MongoDatabase mongoCNA = mongoClient.getDatabase(cnaDB);
     		MongoDatabase mongoCC = mongoClient.getDatabase(ccDB);
-    		MongoCollection<Document> cnaPessoas = mongoCNA.getCollection("Funcionarios");
+    		MongoCollection<Document> cnaFuncionarios = mongoCNA.getCollection("Funcionarios");
+    		MongoCollection<Document> CCPessoas = mongoCC.getCollection("Pessoas");
     		MongoCollection<Document> CCFuncionarios = mongoCC.getCollection("Funcionarios");
-    		MongoCursor<Document> cursor = cnaPessoas.find().iterator();
-    		cursor.forEachRemaining(doc -> {
+    		MongoCursor<Document> cnaFuncionariosCursor = cnaFuncionarios.find().iterator();
+    		cnaFuncionariosCursor.forEachRemaining(cnaFuncionario -> {
     			Document fila = new Document();
-    			if (doc.containsKey("nome")) fila.append("nome", doc.getString("nome"));
-    			if (doc.containsKey("login")) fila.append("login", doc.getString("login"));
-    			if (doc.containsKey("pwd")) fila.append("pwd", doc.getLong("pwd"));
-    			if (doc.containsKey("unidade")) fila.append("unidade", doc.getString("unidade"));
-    			if (doc.containsKey("funcao")) fila.append("funcao", doc.getString("funcao"));
-    			if (doc.containsKey("especializacao")) fila.append("especializacao", doc.getString("especializacao"));
-    			if (doc.containsKey("grupo")) {
-    				fila.append("grupo", doc.getString("grupo")); 
-    			} else {
-    				fila.append("grupo", "usuario");
+    			// Se já tiver esse nome em cnaPessoas eu coloco o _id no pessoas_id ao invés do nome direto no funcionarios.
+    			if (cnaFuncionario != null) {	
+	    			if (cnaFuncionario.containsKey("nome")) fila.append("alias", cnaFuncionario.getString("nome"));
+	    			if (cnaFuncionario.containsKey("login")) fila.append("login", cnaFuncionario.getString("login"));
+	    			if (cnaFuncionario.containsKey("pwd")) fila.append("pwd", cnaFuncionario.getLong("pwd"));
+	    			if (cnaFuncionario.containsKey("unidade")) fila.append("unidade", cnaFuncionario.getString("unidade"));
+	    			if (cnaFuncionario.containsKey("funcao")) fila.append("funcao", cnaFuncionario.getString("funcao"));
+	    			if (cnaFuncionario.containsKey("especializacao")) fila.append("especializacao", cnaFuncionario.getString("especializacao"));
+	    			if (cnaFuncionario.containsKey("grupo")) {
+	    				fila.append("grupo", cnaFuncionario.getString("grupo")); 
+	    			} else {
+	    				fila.append("grupo", "usuario");
+	    			}
+	    			if (cnaFuncionario.containsKey("versao")) fila.append("versao", cnaFuncionario.getString("versao"));
+	    			CCFuncionarios.insertOne(fila);
     			}
-    			if (doc.containsKey("versao")) fila.append("versao", doc.getString("versao"));
-    			CCFuncionarios.insertOne(fila);
     		});
-    		
+			MongoCursor<Document> funcionariosCursor = CCFuncionarios.find().iterator();
+			funcionariosCursor.forEachRemaining(funcionario -> {
+				Document pessoa = CCPessoas.find(eq("name", funcionario.getString("alias"))).first();
+				if (pessoa != null && !pessoa.isEmpty()) {
+					//associa à pessoa
+					Document updateFuncionario = CCFuncionarios.find(eq("_id",funcionario.getObjectId("_id"))).first();
+					updateFuncionario.append("pessoa_id", pessoa.getObjectId("_id"));
+					CCFuncionarios.replaceOne(eq("_id",updateFuncionario.getObjectId("_id")), updateFuncionario);
+					Document updatePessoa = CCPessoas.find(eq("_id",pessoa.getObjectId("_id"))).first();
+					updatePessoa.append("funcionario_id", updateFuncionario.getObjectId("_id"));
+					CCPessoas.replaceOne(eq("_id", updatePessoa.getObjectId("_id")), updatePessoa);
+				} else {
+					//cria nova pessoa?  Não! Deixa sem mesmo!
+				}
+			});
     	} catch (Exception e) {
     		e.printStackTrace();
     	}	
+    	
+    	// FAMILIAS -> Endereço
+    	try (MongoClient mongoClient = new MongoClient(connectionString)){
+    		MongoDatabase mongoCNA = mongoClient.getDatabase(cnaDB);
+    		MongoDatabase mongoCC = mongoClient.getDatabase(ccDB);
+    		MongoCollection<Document> cnaFamilias = mongoCNA.getCollection("Familias");
+    		MongoCollection<Document> ccEndereco = mongoCC.getCollection("Enderecos");
+    		MongoCollection<Document> ccPaciente = mongoCC.getCollection("Pacientes");
+    		MongoCursor<Document> cursor = cnaFamilias.find().iterator();
+    		cursor.forEachRemaining(fam -> {
+    			Document novoEndereco = new Document();
+    			if (fam.containsKey("ff")) novoEndereco.append("ff", fam.getString("ff"));
+    			if (fam.containsKey("posto")) novoEndereco.append("posto", fam.getString("posto"));
+    			if (fam.containsKey("Equipe")) novoEndereco.append("equipe", fam.getString("Equipe"));
+    			if (fam.containsKey("Endereco")) novoEndereco.append("rua", fam.getString("Endereco"));
+    			if (fam.containsKey("Numero")) novoEndereco.append("numero", fam.getString("Numero"));
+    			if (fam.containsKey("Bairro")) novoEndereco.append("bairro", fam.getString("Bairro"));
+    			if (fam.containsKey("Tel")) novoEndereco.append("tel", fam.getString("Tel"));
+    			if (fam.containsKey("Nota")) novoEndereco.append("nota", fam.getString("Nota"));
+    			if (novoEndereco != null && !novoEndereco.isEmpty()) {
+    				ArrayList<ObjectId> moradoresId = new ArrayList<>();
+    				MongoCursor<Document> ppCursor = ccPaciente.find().iterator();
+    				ppCursor.forEachRemaining(paciente -> {
+    					if (paciente.containsKey("ff") && novoEndereco.containsKey("ff") &&
+    							paciente.getString("ff").equals(novoEndereco.getString("ff"))) {
+    						if (paciente.containsKey("pessoa_id"))
+    							moradoresId.add(paciente.getObjectId("pessoa_id"));
+    					}
+    				});
+    				if (moradoresId != null && !moradoresId.isEmpty())
+    					novoEndereco.append("moradores", moradoresId);
+    				ccEndereco.insertOne(novoEndereco);
+    			}
+    		});
+    	}
     }
 }
