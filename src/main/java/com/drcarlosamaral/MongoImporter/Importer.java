@@ -50,7 +50,7 @@ public class Importer
     					Document pessoa = new Document();
     					Document paciente = new Document();
     					if (doc.containsKey("ff")) paciente.append("ff", doc.getString("ff"));
-    					if (doc.containsKey("posto")) paciente.append("posto", doc.getString("posto"));
+    					paciente.append("posto", "C.S.Nova América");
     					if (doc.containsKey("Equipe")) paciente.append("equipe", doc.getString("Equipe"));
     					if (doc.containsKey("CNS")) paciente.append("cns", doc.getLong("CNS"));
     					if (doc.containsKey("medico")) paciente.append("medico", doc.getString("medico"));
@@ -211,7 +211,7 @@ public class Importer
     		cursor.forEachRemaining(fam -> {
     			Document novoEndereco = new Document();
     			if (fam.containsKey("ff")) novoEndereco.append("ff", fam.getString("ff"));
-    			if (fam.containsKey("posto")) novoEndereco.append("posto", fam.getString("posto"));
+    			novoEndereco.append("posto", "C.S.Nova América");
     			if (fam.containsKey("Equipe")) novoEndereco.append("equipe", fam.getString("Equipe"));
     			if (fam.containsKey("Endereco")) novoEndereco.append("rua", fam.getString("Endereco"));
     			if (fam.containsKey("Numero")) novoEndereco.append("numero", fam.getString("Numero"));
