@@ -207,8 +207,9 @@ public class Importer
     		MongoCollection<Document> cnaFamilias = mongoCNA.getCollection("Familias");
     		MongoCollection<Document> ccEndereco = mongoCC.getCollection("Enderecos");
     		MongoCollection<Document> ccPaciente = mongoCC.getCollection("Pacientes");
-    		MongoCursor<Document> cursor = cnaFamilias.find().iterator();
-    		cursor.forEachRemaining(fam -> {
+    		MongoCollection<Document> ccPessoa = mongoCC.getCollection("Pessoas");
+    		MongoCursor<Document> familiasCursor = cnaFamilias.find().iterator();
+    		familiasCursor.forEachRemaining(fam -> {
     			Document novoEndereco = new Document();
     			if (fam.containsKey("ff")) novoEndereco.append("ff", fam.getString("ff"));
     			novoEndereco.append("posto", "C.S.Nova América");
@@ -233,6 +234,17 @@ public class Importer
     				ccEndereco.insertOne(novoEndereco);
     			}
     		});
+    		MongoCursor<Document> enderecoCursor = ccEndereco.find().iterator();
+			enderecoCursor.forEachRemaining(end -> {
+				if (end.containsKey("moradores")) {
+					ArrayList<ObjectId> mIds = (ArrayList<ObjectId>) end.get("moradores");
+					for (ObjectId mId : mIds) {
+						Document p = ccPessoa.find(eq("_id", mId)).first();
+						p.append("endereco_id", end.getObjectId("_id"));
+						ccPessoa.findOneAndReplace(eq("_id", p.getObjectId("_id")), p);
+					}
+				}
+			});
     	}
     }
 }
