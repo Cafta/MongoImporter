@@ -24,6 +24,9 @@ public class Importer
     public static final String cnaDB = "ControleNovaAmerica";
     public static final String ccDB = "ControleCronicosBD";
     public static final String VERSAO = "1.2.0 (ccDB)";
+
+    private static Document luiz = new Document();
+    private static Document carlos = new Document();
     
     public static void main( String[] args )
     {
@@ -178,7 +181,15 @@ public class Importer
 	    				fila.append("grupo", "usuario");
 	    			}
 	    			if (cnaFuncionario.containsKey("versao")) fila.append("versao", cnaFuncionario.getString("versao"));
+	    			if (fila.getString("login").equals("Carlos")) {
+	    				fila.replace("grupo", "adm");
+	    			}
 	    			CCFuncionarios.insertOne(fila);
+	    			if (fila.getString("login").equals("Luiz")) luiz = fila;
+	    			if (fila.getString("login").equals("Carlos")) {
+	    				fila.replace("grupo", "adm");
+	    				carlos = fila;
+	    			}
     			}
     		});
 			MongoCursor<Document> funcionariosCursor = CCFuncionarios.find().iterator();
@@ -245,6 +256,33 @@ public class Importer
 					}
 				}
 			});
+    	}
+    	
+    	// Consultas
+    	
+    	try (MongoClient mongoClient = new MongoClient(connectionString)){
+    		MongoDatabase mongoCNA = mongoClient.getDatabase(cnaDB);
+    		MongoDatabase mongoCC = mongoClient.getDatabase(ccDB);
+    		MongoCollection<Document> cnaEventos = mongoCNA.getCollection("Eventos");
+    		MongoCollection<Document> ccPacientes = mongoCC.getCollection("Pacientes");
+    		MongoCollection<Document> ccConsultas = mongoCC.getCollection("Consultas");
+    		MongoCursor<Document> cursor = cnaEventos.find(exists("quem")).iterator();
+    		while (cursor.hasNext()) {
+    			Document c = cursor.next();
+    			Document consulta = new Document();
+    			Document paciente = ccPacientes.find(eq("cns", c.getLong("CNS"))).first();
+    			if (paciente != null) {
+	    			consulta.append("paciente_id", paciente.getObjectId("_id"));
+	    			if (c.containsKey("nota")) consulta.append("obs", c.getString("nota"));
+	    			if (c.getString("quem").equals("Dr.Carlos")) consulta.append("funcionario_id", carlos.getObjectId("_id"));
+	    			if (c.getString("quem").equals("Dr.Luiz")) consulta.append("funcionario_id", luiz.getObjectId("_id"));
+	    			consulta.append("data", c.getDate("data"));
+	    			consulta.append("local", "C.S.Nova América");
+	    			ccConsultas.insertOne(consulta);
+    			}
+    		}
+    	} catch (Exception e) {
+    		e.printStackTrace();
     	}
     }
 }
