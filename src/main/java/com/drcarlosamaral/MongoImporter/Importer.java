@@ -56,7 +56,7 @@ public class Importer
     					paciente.append("posto", "C.S.Nova América");
     					if (doc.containsKey("Equipe")) paciente.append("equipe", doc.getString("Equipe"));
     					if (doc.containsKey("CNS")) paciente.append("cns", doc.getLong("CNS"));
-    					if (doc.containsKey("medico")) paciente.append("medico", doc.getString("medico"));
+    					if (doc.containsKey("medico")) paciente.append("medicoString", doc.getString("medico"));
     					if (doc.containsKey("name")) pessoa.append("name", doc.getString("name"));
     					if (doc.containsKey("nomeMae")) pessoa.append("nomeMae", doc.getString("nomeMae"));
     					if (doc.containsKey("dn")) pessoa.append("dn", doc.getDate("dn"));
@@ -163,6 +163,7 @@ public class Importer
     		MongoDatabase mongoCC = mongoClient.getDatabase(ccDB);
     		MongoCollection<Document> cnaFuncionarios = mongoCNA.getCollection("Funcionarios");
     		MongoCollection<Document> CCPessoas = mongoCC.getCollection("Pessoas");
+    		MongoCollection<Document> CCPacientes = mongoCC.getCollection("Pacientes");
     		MongoCollection<Document> CCFuncionarios = mongoCC.getCollection("Funcionarios");
     		MongoCursor<Document> cnaFuncionariosCursor = cnaFuncionarios.find().iterator();
     		cnaFuncionariosCursor.forEachRemaining(cnaFuncionario -> {
@@ -194,6 +195,7 @@ public class Importer
     		});
 			MongoCursor<Document> funcionariosCursor = CCFuncionarios.find().iterator();
 			funcionariosCursor.forEachRemaining(funcionario -> {
+				// relacionar pessoa ao funcionario:
 				Document pessoa = CCPessoas.find(eq("name", funcionario.getString("alias"))).first();
 				if (pessoa != null && !pessoa.isEmpty()) {
 					//associa à pessoa
@@ -205,6 +207,18 @@ public class Importer
 					CCPessoas.replaceOne(eq("_id", updatePessoa.getObjectId("_id")), updatePessoa);
 				} else {
 					//cria nova pessoa?  Não! Deixa sem mesmo!
+				}
+			});
+			MongoCursor<Document> pacientesCursor = CCPacientes.find().iterator();
+			pacientesCursor.forEachRemaining(pac -> {
+				if (pac.containsKey("medicoString")) {
+					if (pac.get("medicoString") != null && pac.getString("medicoString").equals("Dr.Carlos")) {
+						pac.append("medico", carlos.getObjectId("_id"));
+					} else if (pac.get("medicoString") != null && pac.getString("medicoString").equals("Dr.Luiz")) {
+						pac.append("medico", luiz.getObjectId("_id"));
+					}
+					pac.remove("medicoString");
+					CCPacientes.replaceOne(eq("_id", pac.getObjectId("_id")), pac);
 				}
 			});
     	} catch (Exception e) {
@@ -224,6 +238,7 @@ public class Importer
     			Document novoEndereco = new Document();
     			if (fam.containsKey("ff")) novoEndereco.append("ff", fam.getString("ff"));
     			novoEndereco.append("posto", "C.S.Nova América");
+    			novoEndereco.append("municipio", "Campinas");
     			if (fam.containsKey("Equipe")) novoEndereco.append("equipe", fam.getString("Equipe"));
     			if (fam.containsKey("Endereco")) novoEndereco.append("rua", fam.getString("Endereco"));
     			if (fam.containsKey("Numero")) novoEndereco.append("numero", fam.getString("Numero"));
