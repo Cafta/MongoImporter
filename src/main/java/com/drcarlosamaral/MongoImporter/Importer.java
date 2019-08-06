@@ -3,6 +3,7 @@ package com.drcarlosamaral.MongoImporter;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 
+import com.mongodb.ConnectionString;
 import com.mongodb.MongoClient;
 import com.mongodb.MongoClientURI;
 import com.mongodb.client.MongoCollection;
@@ -13,6 +14,9 @@ import static com.mongodb.client.model.Filters.*;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Exporta do BD ControleNovaAmerica para ControleCronicosBD
@@ -21,6 +25,7 @@ import java.util.Date;
 public class Importer 
 {
 	private static String URL = "mongodb://usuario:xyz123@localhost:27017";
+	private static MongoClientURI connectionString = new MongoClientURI(URL);
     public static final String cnaDB = "ControleNovaAmerica";
     public static final String ccDB = "ControleCronicosBD";
     public static final String VERSAO = "1.2.0 (ccDB)";
@@ -28,9 +33,10 @@ public class Importer
     private static Document luiz = new Document();
     private static Document carlos = new Document();
     
+    private static Map<Long, Document> mapaSUS_Paciente = new HashMap<>();
+    
     public static void main( String[] args )
     {
-    	MongoClientURI connectionString = new MongoClientURI(URL);
     	
     	// PESSOAS
     	try (MongoClient mongoClient = new MongoClient(connectionString)){
@@ -299,5 +305,222 @@ public class Importer
     	} catch (Exception e) {
     		e.printStackTrace();
     	}
+    	
+    	// EVENTOS - PA, Glicemia, HbA1c, Exames da Saúde da Mulher e Impressos
+    	
+    	try (MongoClient mongoClient = new MongoClient(connectionString)) {
+    		MongoDatabase cnaBD = mongoClient.getDatabase("ControleNovaAmerica");
+    		MongoDatabase ccDB = mongoClient.getDatabase("ControleCronicosBD");
+    		MongoCollection<Document> eventos = cnaBD.getCollection("Eventos");
+    		MongoCollection<Document> impressos = ccDB.getCollection("Impressos");
+    		MongoCollection<Document> exames = ccDB.getCollection("Exames");
+    		MongoCollection<Document> pacientes = ccDB.getCollection("Pacientes");
+    		MongoCursor<Document> cursor = eventos.find().iterator();
+    		cursor.forEachRemaining(evento -> {
+    			Document exame = new Document();
+    			Document paciente = pacientes.find(eq("cns", evento.getLong("CNS"))).first();
+    			if (paciente == null) {
+    				System.out.println("PACIENTE NÃO ENCONTRADO COM CNS: " + evento.getLong("CNS"));
+    				System.out.println("Vamos vasculhar evento por uma pista");
+    				paciente = vasculha(evento);
+    				if (paciente != null) System.out.println("Paciente mudou CNS para: " + paciente.getLong("CNS"));
+    			}
+    			if (paciente != null) {
+    				exame.append("paciente_id", paciente.getObjectId("_id"));
+    				exame.append("data", evento.getDate("data"));
+    				// PA
+    				if (evento.containsKey("tipo") && evento.getString("tipo").equals("PA")) {
+	    				exame.append("nome", "pa");
+		    			Document pa = new Document();
+		    				pa.append("max", ((Document) evento).getInteger("MAX"));
+		    				pa.append("min", ((Document) evento).getInteger("MIN"));
+		    			exame.append("resultado", pa.getInteger("max") + "x" + pa.getInteger("min") + "mmHg");
+		    			exame.append("detalhes", pa);
+		    			exames.insertOne(exame);
+    				}
+    				// GLICEMIA JEJUM / HbA1c
+    				else if (evento.containsKey("gli") || evento.containsKey("hba1c")) {
+    					if (evento.containsKey("gli")) {
+    						if (evento.containsKey("posPrandial") && evento.getBoolean("posPrandial")) {
+    							exame.append("nome", "glicemiaPosPrandial");
+    						} else {
+    							exame.append("nome", "glicemiaJejum");
+    						}
+    						exame.append("resultado", evento.getInteger("gli") + "mg/dL");
+    						Document gl = new Document();
+    							gl.append("gli", evento.getInteger("gli"));
+    						exame.append("detalhes", gl);
+    		    			exames.insertOne(exame);
+    					}
+    					if (evento.containsKey("hba1c")) {
+    						if (exame.containsKey("_id")) exame.remove("_id");
+    						if (exame.containsKey("nome")) exame.remove("nome");
+    						if (exame.containsKey("resultado")) exame.remove("resultado");
+    						if (exame.containsKey("detalhes")) exame.remove("detalhes");
+    						exame.append("nome", "hba1c");
+    						exame.append("resultado", evento.getDouble("hba1c") + "%");
+    						Document hGlicada = new Document();
+    							hGlicada.append("hba1c", evento.getDouble("hba1c"));
+    						exame.append("detalhes", hGlicada);
+    		    			exames.insertOne(exame);
+    					}
+    				}
+    				// Exames da Saúde da Mulher
+    				else if (evento.containsKey("tipo") && evento.getString("tipo").equals("SMULHER")) {
+    					if (evento.getString("exame").equals("Mamografia")) {
+    						exame.append("nome", "Mamografia");
+    					} else if (evento.getString("exame").equals("C.O.")) {
+    						exame.append("nome", "Papanicolau");
+    					} else if (evento.getString("exame").equals("USG mamas")) {
+    						exame.append("nome", "USG mamas");
+    					} else if (evento.getString("exame").equals("USGtv")) {
+    						exame.append("nome", "USGtv");
+    					}
+						String resultado = "";
+						Document detalhes = new Document();
+						if (evento.containsKey("nota")) {
+							resultado = evento.getString("nota");
+							detalhes.append("nota", evento.getString("nota"));
+						} else {
+							if (evento.containsKey("alterado")) {
+								resultado = evento.getBoolean("alterado") ? "Alterado" : "Normal";
+							}
+						}
+						if (evento.containsKey("alterado")) detalhes.append("alterado", evento.getBoolean("alterado"));
+						if (!resultado.equals("")) exame.append("resultado", resultado);
+						if (!detalhes.isEmpty()) exame.append("detalhes", detalhes);
+		    			exames.insertOne(exame);
+    				}
+    				// ENCAMINHAMENTOS
+    				else if (evento.containsKey("tipo") && evento.getString("tipo").equals("ENCAMINHAMENTO")) {
+	    				Document doc = new Document();
+	    				if (evento.containsKey("CNS")) doc.append("cns", evento.getLong("CNS"));
+	    				if (evento.containsKey("especialidade") && !evento.getString("especialidade").equals("")) 
+	    					doc.append("especialidade", evento.getString("especialidade"));
+	    				if (evento.containsKey("ff") && !evento.getString("ff").equals("")) 
+	    					doc.append("ff", evento.getString("ff"));
+	    				if (evento.containsKey("hd") && !evento.getString("hd").equals("")) 
+	    					doc.append("hd", evento.getString("hd"));
+	    				if (evento.containsKey("nome") && !evento.getString("nome").equals("")) 
+	    					doc.append("nome", evento.getString("nome"));
+	    				if (evento.containsKey("dn") && !evento.getString("dn").equals("")) 
+	    					doc.append("dn", DateUtils.asDate(evento.getString("dn")));
+	    				if (evento.containsKey("nomeMae") && !evento.getString("nomeMae").equals("")) 
+	    					doc.append("nomeDaMae", evento.getString("nomeMae"));
+	    				if (evento.containsKey("unidade") && !evento.getString("unidade").equals("")) 
+	    					doc.append("posto", evento.getString("unidade"));
+	    				if (evento.containsKey("quadroClinico") && !evento.getString("quadroClinico").equals("")) 
+	    					doc.append("quadroClinico", evento.getString("quadroClinico"));
+	    				if (evento.containsKey("exames") && !evento.getString("exames").equals("")) 
+	    					doc.append("resultadoExames", evento.getString("exames"));
+	    				if (evento.containsKey("tel") && !evento.getString("tel").equals("")) 
+	    					doc.append("tel", evento.getString("tel"));
+	    				doc.append("vermelho", evento.getBoolean("vermelho"));
+	    				doc.append("amarelo", evento.getBoolean("amarelo"));
+	    				doc.append("verde", evento.getBoolean("verde"));
+	    				doc.append("azul", evento.getBoolean("azul"));
+	    				if (evento.containsKey("data") && evento.getDate("data") != null)
+	    					doc.append("data", evento.getDate("data"));
+    				
+	    				Document impresso = new Document();
+	    				if (paciente.getObjectId("_id") != null) impresso.append("paciente_id", paciente.getObjectId("_id"));
+	    				impresso.append("oQue", "Referencia");
+	    				if (evento.containsKey("data") && evento.getDate("data") != null)
+	    					impresso.append("quando", evento.getDate("data"));
+	    				if (doc != null) impresso.append("doc", doc);
+	    				
+	    				impressos.insertOne(impresso);
+    				}
+    			} else {
+    				System.out.println("PACIENTE NÃO ENCONTRADO");
+    			}
+    		});
+    		
+    	} catch (Exception e) {
+    		e.printStackTrace();
+    	}
+    }
+    
+    private static Document vasculha(Document evento) {
+    	if (evento == null || !evento.containsKey("SUS")) return null;
+    	if (mapaSUS_Paciente.containsKey(evento.getLong("SUS"))) {
+    		return mapaSUS_Paciente.get(evento.getLong("SUS"));
+    	}
+    	if (evento.containsKey("tipo") &&
+    			(evento.getString("tipo").equals("PRENATAL") ||
+    			evento.getString("tipo").equals("GRUPOGESTANTES") ||
+    			evento.getString("tipo").equals("VACINAS"))) {
+    		// tenta pegar a gestante pelo sis e depois o paciente pelo nome e ff
+    		Document gestante = getGestanteBySIS(evento.getLong("SIS"));
+    		if (gestante != null) {
+	    		Document pct =  getPacienteByNameAndFf(gestante.getString("nome"), gestante.getString("ff"));
+	    		if (pct != null) {
+	    			mapaSUS_Paciente.put(evento.getLong("SUS"), pct);
+	    			return pct;
+	    		}
+    		}
+    	}
+    	else if (evento.containsKey("tipo") && evento.getString("tipo").equals("ENCAMINHAMENTO")) {
+    		Document pct =  getPacienteByNameAndFf(evento.getString("nome"), evento.getString("ff"));
+    		if (pct != null) {
+    			mapaSUS_Paciente.put(evento.getLong("SUS"), pct);
+    			return pct;
+    		}
+    	}
+    	else if (evento.containsKey("tipo") && evento.getString("tipo").equals("SIS")) {
+    		Document pct = getPacienteByNomeEDn(evento.getString("nome"), evento.getDate("dn"));
+    		if (pct != null && !pct.isEmpty()) {
+    			mapaSUS_Paciente.put(evento.getLong("SUS"), pct);
+    			return pct;
+    		}
+    	}
+    	mapaSUS_Paciente.put(evento.getLong("SUS"), null);
+    	return null;
+    }
+    
+    private static Document getPacienteByNomeEDn(String nome, Date dn) {
+    	Document paciente = null;
+    	try (MongoClient mongoClient = new MongoClient(connectionString)) {
+    		MongoDatabase cc = mongoClient.getDatabase("ControleCronicosBD");
+    		MongoCollection<Document> pessoas = cc.getCollection("Pessoas");
+    		MongoCollection<Document> pacientes = cc.getCollection("Pacientes");
+    		Document pessoa = pessoas.find(and(eq("name", nome), eq("dn", dn))).first();
+			paciente = pacientes.find(eq("_id", pessoa.getObjectId("paciente_id"))).first();
+    	}
+    	return paciente;
+    }
+    
+    private static Document getPacienteByNameAndFf(String name, String ff) {
+    	Document pct = null;
+    	try (MongoClient mongoClient = new MongoClient(connectionString)) {
+    		MongoDatabase cc = mongoClient.getDatabase("ControleCronicosBD");
+    		MongoCollection<Document> pacientes = cc.getCollection("Pacientes");
+    		MongoCollection<Document> pessoas = cc.getCollection("Pessoas");
+    		MongoCursor<Document> pessoasCursor = pessoas.find(eq("name", name)).iterator();
+			while (pessoasCursor.hasNext()) {
+				Document p = pessoasCursor.next();
+				if (p.containsKey("paciente_id")) {
+					Document paciente = pacientes.find(eq("_id", p.getObjectId("paciente_id"))).first();
+					if (paciente.containsKey("ff") && paciente.getString("ff").equals(ff)) {
+						pct = paciente;
+					}
+				}
+			}
+    	} catch (Exception ex) {
+    		ex.printStackTrace();
+    	}
+    	return pct;
+    }
+    
+    private static Document getGestanteBySIS(Long sis) {
+    	Document gestante = null;
+    	try (MongoClient mongoClient = new MongoClient(connectionString)) {
+    		MongoDatabase cna = mongoClient.getDatabase("ControleNovaAmerica");
+    		MongoCollection<Document> gestantes = cna.getCollection("Gestantes");
+    		gestante = gestantes.find(eq("SIS", sis)).first();
+    	} catch (Exception ex) {
+    		ex.printStackTrace();
+    	}
+    	return gestante;
     }
 }
