@@ -24,7 +24,8 @@ import java.util.Map;
  */
 public class Importer 
 {
-	private static String URL = "mongodb://usuario:xyz123@localhost:27017";
+	private static String URL = "mongodb://Admin:hehehe@172.22.74.41:27017";
+	//private static String URL = "mongodb://usuario:xyz123@localhost:27017";
 	private static MongoClientURI connectionString = new MongoClientURI(URL);
     public static final String cnaDB = "ControleNovaAmerica";
     public static final String ccDB = "ControleCronicosBD";
@@ -341,14 +342,15 @@ public class Importer
     				// GLICEMIA JEJUM / HbA1c
     				else if (evento.containsKey("gli") || evento.containsKey("hba1c")) {
     					if (evento.containsKey("gli")) {
-    						if (evento.containsKey("posPrandial") && evento.getBoolean("posPrandial")) {
-    							exame.append("nome", "glicemiaPosPrandial");
+    						Document gl = new Document();
+    						exame.append("nome", "glicemia");
+    						if (evento.containsKey("posPrandial")) {
+    							gl.append("jejum", evento.getBoolean("posPrandial"));
     						} else {
-    							exame.append("nome", "glicemiaJejum");
+    							gl.append("jejum", true);
     						}
     						exame.append("resultado", evento.getInteger("gli") + "mg/dL");
-    						Document gl = new Document();
-    							gl.append("gli", evento.getInteger("gli"));
+    						gl.append("glicemia", evento.getInteger("gli"));
     						exame.append("detalhes", gl);
     		    			exames.insertOne(exame);
     					}
