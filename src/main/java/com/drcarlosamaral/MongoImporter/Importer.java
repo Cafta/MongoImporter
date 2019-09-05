@@ -3,19 +3,18 @@ package com.drcarlosamaral.MongoImporter;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 
-import com.mongodb.ConnectionString;
 import com.mongodb.MongoClient;
 import com.mongodb.MongoClientURI;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
+
 import static com.mongodb.client.model.Filters.*;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -24,8 +23,8 @@ import java.util.Map;
  */
 public class Importer 
 {
-	private static String URL = "mongodb://Admin:hehehe@172.22.74.41:27017";
-	//private static String URL = "mongodb://usuario:xyz123@localhost:27017";
+	//private static String URL = "mongodb://Admin:hehehe@172.22.74.41:27017";
+	private static String URL = "mongodb://usuario:xyz123@localhost:27017";
 	private static MongoClientURI connectionString = new MongoClientURI(URL);
     public static final String cnaDB = "ControleNovaAmerica";
     public static final String ccDB = "ControleCronicosBD";
@@ -130,6 +129,7 @@ public class Importer
     						rec.append("antiga", false);
     						rec.append("umaVia", true);
     						rec.append("duasVias", false);
+    						rec.append("identificacaoDaReceita", "*data da importação do BD.");
     						rec.append("paciente_id", paciente.getObjectId("_id"));
     						if (!rec.getString("receita").equals(""))
     							CCReceitas.insertOne(rec);
@@ -270,6 +270,7 @@ public class Importer
     		MongoCursor<Document> enderecoCursor = ccEndereco.find().iterator();
 			enderecoCursor.forEachRemaining(end -> {
 				if (end.containsKey("moradores")) {
+					@SuppressWarnings("unchecked")
 					ArrayList<ObjectId> mIds = (ArrayList<ObjectId>) end.get("moradores");
 					for (ObjectId mId : mIds) {
 						Document p = ccPessoa.find(eq("_id", mId)).first();
@@ -280,7 +281,7 @@ public class Importer
 			});
     	}
     	
-    	// Consultas
+    	// CONSULTAS
     	
     	try (MongoClient mongoClient = new MongoClient(connectionString)){
     		MongoDatabase mongoCNA = mongoClient.getDatabase(cnaDB);
@@ -378,18 +379,14 @@ public class Importer
     					} else if (evento.getString("exame").equals("USGtv")) {
     						exame.append("nome", "USGtv");
     					}
-						String resultado = "";
 						Document detalhes = new Document();
 						if (evento.containsKey("nota")) {
-							resultado = evento.getString("nota");
-							detalhes.append("nota", evento.getString("nota"));
-						} else {
-							if (evento.containsKey("alterado")) {
-								resultado = evento.getBoolean("alterado") ? "Alterado" : "Normal";
-							}
+							detalhes.append("resultadoDescritivo", evento.getString("nota"));
 						}
-						if (evento.containsKey("alterado")) detalhes.append("alterado", evento.getBoolean("alterado"));
-						if (!resultado.equals("")) exame.append("resultado", resultado);
+						if (evento.containsKey("alterado")) {
+							detalhes.append("resultadoNormal", !evento.getBoolean("alterado"));
+							exame.append("resultado", evento.getBoolean("alterado") ? "Alterado" : "Normal");
+						}
 						if (!detalhes.isEmpty()) exame.append("detalhes", detalhes);
 		    			exames.insertOne(exame);
     				}
@@ -438,6 +435,90 @@ public class Importer
     			}
     		});
     		
+    	} catch (Exception e) {
+    		e.printStackTrace();
+    	}
+    	
+    	// GESTACOES / GESTANTES
+    	
+    	try (MongoClient mongoClient = new MongoClient(connectionString)) {
+    		MongoDatabase cnaBD = mongoClient.getDatabase("ControleNovaAmerica");
+    		MongoDatabase ccDB = mongoClient.getDatabase("ControleCronicosBD");
+    		MongoCollection<Document> cna_gestantes = cnaBD.getCollection("Gestantes");
+    		MongoCollection<Document> cc_gestacoes = ccDB.getCollection("Gestacoes");
+    		MongoCollection<Document> cc_controleGest = ccDB.getCollection("ControleGest");
+    		MongoCollection<Document> pacientes = ccDB.getCollection("Pacientes");
+    		MongoCollection<Document> pessoas = ccDB.getCollection("Pessoas");
+    		MongoCursor<Document> cursor_cna_gestantes = cna_gestantes.find().iterator();
+    		cursor_cna_gestantes.forEachRemaining(cna_gestante -> {
+    			// quem é a paciente?
+    			Document paciente = pacientes.find(eq("cns", cna_gestante.getLong("CNS"))).first();
+    			if (paciente == null) {
+    				Document pessoa = pessoas.find(eq("name", cna_gestante.getString("nome"))).first();
+    				paciente = pacientes.find(eq("_id", pessoa.getObjectId("paciente_id"))).first();
+    			}
+    			if (paciente == null) {
+    				System.out.println("Paciente não encontrado para gestante " + cna_gestante.getString("nome"));
+    			} else {
+    				
+    				Document cc_gestacao = new Document();
+    				cc_gestacao.append("paciente_id", paciente.getObjectId("_id"));
+    				if (cna_gestante.containsKey("idade")) cc_gestacao.append("idade", cna_gestante.getInteger("idade"));
+    				if (cna_gestante.containsKey("parceiro")) cc_gestacao.append("companheiro", cna_gestante.getString("parceiro"));
+    				if (cna_gestante.containsKey("nomeBebe")) cc_gestacao.append("bebe", cna_gestante.getString("nomeBebe"));
+    				if (cna_gestante.containsKey("parceiro")) cc_gestacao.append("companheiro", cna_gestante.getString("parceiro"));
+    				if (cna_gestante.containsKey("sexoBebe")) {
+    					if (cna_gestante.getString("sexoBebe").equals("fem")) {
+    						cc_gestacao.append("fem", true);
+    						cc_gestacao.append("mas", false);
+    					} else {
+    						cc_gestacao.append("fem", false);
+    						cc_gestacao.append("mas", true);
+    					}
+    				}
+    				if (cna_gestante.containsKey("referencia")) {
+    					if (cna_gestante.getString("referencia").equals("dum")) {
+    						cc_gestacao.append("pelaDum", true);
+    						cc_gestacao.append("pelaUsg", false);
+    					} else {
+    						cc_gestacao.append("pelaDum", false);
+    						cc_gestacao.append("pelaUsg", true);
+    					}
+    				}
+    				if (cna_gestante.containsKey("dum")) cc_gestacao.append("dum", cna_gestante.getDate("dum"));
+    				if (cna_gestante.containsKey("usg")) {
+    					Document usgDoc = cna_gestante.get("usg", Document.class);
+    					cc_gestacao.append("data1Usg", usgDoc.getDate("data"));
+    					cc_gestacao.append("sem1Usg", usgDoc.getInteger("igSem"));
+    					cc_gestacao.append("dias1Usg", usgDoc.getInteger("igDias"));
+    				}
+    				if (cna_gestante.containsKey("hg")) {
+    					Document hgDoc = cna_gestante.get("hg", Document.class);
+    					cc_gestacao.append("gestasPrevias", hgDoc.getInteger("gestas"));
+    					cc_gestacao.append("partosPrevios", hgDoc.getInteger("partos"));
+    					cc_gestacao.append("abortosPrevios", hgDoc.getInteger("abortos"));
+    					cc_gestacao.append("cesarianasPrevias", hgDoc.getInteger("cesarianas"));
+    				}
+    				if (cna_gestante.containsKey("ativa")) {
+    					cc_gestacao.append("ativa", cna_gestante.getBoolean("ativa"));
+    					if (!cna_gestante.getBoolean("ativa")) cc_gestacao.append("dataFechamento", DateUtils.asDate(LocalDate.now()));
+    				}
+    				cc_gestacao.append("dataAbertura", DateUtils.asDate(LocalDate.now()));
+    				cc_gestacao.append("medicoReferencia", carlos.getObjectId("_id"));
+    				
+    				cc_gestacoes.insertOne(cc_gestacao);
+    				
+    				// AGORA O CONTROLE GESTACIONAL
+    				
+    				Document cc_controle = new Document();
+    				cc_controle.append("paciente_id", paciente.getObjectId("_id"));
+    				cc_controle.append("gestacaoAtualId", cc_gestacao.getObjectId("_id"));
+    				
+    				cc_controleGest.insertOne(cc_controle);
+    				paciente.append("controleGest", cc_controle.getObjectId("_id"));
+    				pacientes.findOneAndReplace(eq("_id", paciente.getObjectId("_id")), paciente);
+    			}
+    		});
     	} catch (Exception e) {
     		e.printStackTrace();
     	}
