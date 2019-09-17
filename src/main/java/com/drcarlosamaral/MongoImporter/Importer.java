@@ -15,6 +15,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -488,9 +489,15 @@ public class Importer
     				if (cna_gestante.containsKey("dum")) cc_gestacao.append("dum", cna_gestante.getDate("dum"));
     				if (cna_gestante.containsKey("usg")) {
     					Document usgDoc = cna_gestante.get("usg", Document.class);
-    					cc_gestacao.append("data1Usg", usgDoc.getDate("data"));
-    					cc_gestacao.append("sem1Usg", usgDoc.getInteger("igSem"));
-    					cc_gestacao.append("dias1Usg", usgDoc.getInteger("igDias"));
+    					Document usgObstetrica = new Document();
+    					Document igUsg = new Document();
+    					usgObstetrica.append("data", usgDoc.getDate("data"));
+    					igUsg.append("sem", usgDoc.getInteger("igSem"));
+    					igUsg.append("dias", usgDoc.getInteger("igDias"));
+    					usgObstetrica.append("igUsg", igUsg);
+    					List<Document> usgs = new ArrayList<>();
+    					usgs.add(usgObstetrica);
+    					cc_gestacao.append("usgsObstetricas", usgs);
     				}
     				if (cna_gestante.containsKey("hg")) {
     					Document hgDoc = cna_gestante.get("hg", Document.class);
